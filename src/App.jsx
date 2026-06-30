@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from "react";
-import Anthropic from "@anthropic-ai/sdk";
 import * as THREE from "three";
 import {
   LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid,
@@ -8,7 +7,7 @@ import {
   Activity, Home, MapPin, Sparkles, MessageCircle, Cog, Send,
   Waves, Wind, Footprints, HandHeart, Snowflake, Flame, Bike, Dumbbell,
   Check, Bot, Calendar, Plus, X, AlertTriangle, Clock, ChevronDown,
-  ChevronUp, BarChart2, Key,
+  ChevronUp, BarChart2,
 } from "lucide-react";
 
 const STYLES = `
@@ -203,13 +202,6 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .care-seg button{flex:1;border:none;background:transparent;padding:10px;border-radius:10px;font-family:inherit;font-weight:700;font-size:13px;color:var(--muted);cursor:pointer;transition:.18s;}
 .care-seg button.on{background:var(--surface);color:var(--teal-deep);box-shadow:0 2px 8px rgba(0,0,0,.08);}
 
-/* API key setup */
-.key-setup{background:var(--teal-soft);border:1.5px solid var(--teal);border-radius:22px;padding:24px;margin-bottom:16px;}
-.key-setup h3{font-family:'Fraunces',serif;font-size:21px;font-weight:500;color:var(--teal-deep);margin-bottom:8px;}
-.key-setup p{font-size:13px;color:var(--muted);line-height:1.55;margin-bottom:14px;}
-.key-input{width:100%;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;font-family:monospace;font-size:13px;color:var(--ink);background:var(--surface);outline:none;margin-bottom:12px;}
-.key-input:focus{border-color:var(--teal);}
-.key-note{font-size:11px;color:var(--faint);text-align:center;margin-top:6px;line-height:1.5;}
 `;
 
 /* ── constants ── */
@@ -217,7 +209,103 @@ const PAIN_COLORS = ["#5FB87A","#9CC25C","#F0B23B","#F08A45","#E0594B"];
 const FEELINGS    = ["Pick how today feels","A good day","Manageable","A bit much","Rough","Really tough"];
 const jColor      = lvl => PAIN_COLORS[lvl - 1] || "#ccc";
 
-const BASE_SYSTEM = `You are EaseRA, a warm, calm companion for people living with Rheumatoid Arthritis (RA). You offer evidence-based, compassionate guidance about managing RA — joint care, medication side effects, pacing, flare management, emotional wellbeing, exoskeleton use, and gentle exercise. Always encourage the user to consult their rheumatologist or physical therapist for medical decisions. Keep responses concise, warm, and practical — no long lists unless helpful. Never dismiss pain or fatigue.`;
+/* ── Q&A knowledge base ── */
+const QA_PAIRS = [
+  {
+    keywords:["stiff","stiffness","morning","wake","waking","rigid"],
+    q:"Why are my joints stiff in the morning?",
+    a:"Morning stiffness in RA happens because your immune system stays active overnight, causing inflammation and fluid to build up in joints while you rest. It usually peaks 30–60 minutes after waking.\n\nWhat helps most:\n• Warm shower first thing — heat relaxes the joint capsule and gets synovial fluid moving\n• Gentle movement in bed before you stand (ankle pumps, finger flexes, knee bends)\n• Compression gloves worn overnight reduce hand stiffness by morning\n• Give yourself extra time — rushing makes it worse",
+  },
+  {
+    keywords:["hand","hands","finger","fingers","grip","pinch"],
+    q:"Gentle moves for sore hands?",
+    a:"Warm your hands first — paraffin wax, warm water soak, or a warm damp towel for 5–10 min. Then:\n\n• Finger spreads — open wide, hold 5 sec, close gently × 10\n• Wrist circles — slow and smooth, both directions × 10 each\n• Tendon glides — fist → hook → straight fingers × 10\n• Soft ball squeeze — hold 3 sec, release × 10\n\nAlways stop if you feel sharp pain. Do these right after warmth while joints are most flexible.",
+  },
+  {
+    keywords:["wrist","wrists"],
+    q:"Gentle moves for sore hands?",
+    a:"Warm your hands first — paraffin wax, warm water soak, or a warm damp towel for 5–10 min. Then:\n\n• Finger spreads — open wide, hold 5 sec, close gently × 10\n• Wrist circles — slow and smooth, both directions × 10 each\n• Tendon glides — fist → hook → straight fingers × 10\n• Soft ball squeeze — hold 3 sec, release × 10\n\nAlways stop if you feel sharp pain. Do these right after warmth while joints are most flexible.",
+  },
+  {
+    keywords:["suit","exoskeleton","skeleton","flare","flaring"],
+    q:"How should I set the suit during a flare?",
+    a:"During a flare, let the suit do more of the work:\n\n• Skeleton power: 70–85% — reduces load on your muscles and joints\n• Waist straps: snug but not tight — inflamed tissue is sensitive to pressure\n• Mode: Walking (not Running)\n• Auto-assist on — power will match your logged pain level automatically\n\nIf a joint is acutely hot or swollen, rest that area. The suit supports movement, but rest is still the first priority on high-flare days.",
+  },
+  {
+    keywords:["pace","pacing","busy","energy","tire","tired","conserve","fatigue"],
+    q:"Tips for pacing a busy day",
+    a:"Pacing is one of the most powerful RA management tools:\n\n• 10-on / 10-off — work 10 minutes, rest 10. Prevents the boom-and-bust cycle.\n• Choose your top 3 tasks for the day and let the rest go without guilt\n• Sit whenever possible — standing long loads joints unnecessarily\n• Use adaptive tools (jar openers, electric can openers) to save energy for what matters\n• Plan demanding tasks mid-morning — stiffness has usually faded but fatigue hasn't peaked yet",
+  },
+  {
+    keywords:["food","foods","eat","diet","nutrition","anti-inflammatory","omega"],
+    q:"What foods help with RA inflammation?",
+    a:"Diet can't cure RA, but it can help manage inflammation:\n\n✅ Helpful:\n• Fatty fish (salmon, sardines, mackerel) — rich in omega-3s\n• Colorful vegetables and berries — antioxidants\n• Olive oil — contains oleocanthal, which works similarly to ibuprofen\n• Turmeric with black pepper — curcumin has anti-inflammatory properties\n• Walnuts, flaxseed — plant-based omega-3s\n\n❌ Limit:\n• Processed foods and refined sugar\n• Red and processed meat\n• Alcohol — amplifies inflammation\n\nA Mediterranean-style diet has the most evidence for RA benefit.",
+  },
+  {
+    keywords:["flare","flaring","manage","home","acute","bad day","bad"],
+    q:"How do I manage a flare at home?",
+    a:"When a flare hits:\n\n1. Rest the affected joints — this is the priority\n2. Cold pack for hot, swollen joints — 10–15 min, always with a cloth barrier\n3. Warm for stiff, aching joints that aren't acutely inflamed\n4. Take prescribed anti-inflammatory or pain medication as directed\n5. Reduce your activity load — this is a pacing moment, not a pushing-through moment\n6. Gentle range-of-motion only — no strength exercises during a flare\n7. Contact your rheumatologist if the flare is severe, involves a new joint, or lasts more than a few days",
+  },
+  {
+    keywords:["tired","tiredness","fatigue","exhausted","exhaustion","energy"],
+    q:"What is RA fatigue and how do I handle it?",
+    a:"RA fatigue is different from ordinary tiredness — it's driven by the inflammatory process itself and can be as disabling as joint pain. It's real, not laziness.\n\nWhat helps:\n• Prioritize sleep — aim for 7–9 hours, consistent schedule\n• Short rests during the day (20 min) rather than long naps\n• Gentle movement actually reduces fatigue over time — short walks help\n• Pace activity to avoid boom-and-bust cycles\n• Check for anemia — it's common in RA and a major fatigue driver\n• If fatigue is severe, tell your rheumatologist — it can signal undertreated disease activity",
+  },
+  {
+    keywords:["doctor","rheumatologist","call","when","emergency","urgent","worry","worried"],
+    q:"When should I call my doctor?",
+    a:"Contact your rheumatologist or care team if:\n\n🔴 Soon:\n• A new joint becomes hot, swollen, or red (possible infection or major flare)\n• A flare lasts more than a few days without improving\n• Sudden increase in pain or stiffness without an obvious cause\n\n🟡 At your next visit:\n• Feeling your RA isn't well-controlled on your current treatment\n• New symptoms — rash, eye redness, shortness of breath (RA can affect other organs)\n• Medication side effects that concern you\n\nAlways trust your gut — you know your body best.",
+  },
+  {
+    keywords:["sleep","sleeping","bed","night","insomnia","rest","pillow"],
+    q:"Tips for sleeping with joint pain?",
+    a:"Joint pain and poor sleep feed each other. Things that help:\n\n• Side-lying with a pillow between your knees keeps hips aligned and reduces pressure\n• A supportive mattress that doesn't sag — consider a memory foam topper\n• Wrist/hand resting splints at night reduce morning stiffness\n• Warm bath or shower 1–2 hours before bed relaxes joints\n• Keep the bedroom cool — inflammation runs warmer\n• If pain consistently wakes you at night, mention it to your rheumatologist — it may signal undertreated disease activity",
+  },
+  {
+    keywords:["heat","cold","ice","warm","warmth","hot","temperature","which"],
+    q:"Heat or cold — which should I use?",
+    a:"Both help, but for different situations:\n\n🔥 Heat (warm shower, moist pack, paraffin):\n• Best for morning stiffness and chronic aching\n• Relaxes muscles, increases blood flow, makes joints more flexible\n• Use before movement or exercise\n\n❄️ Cold (ice pack, frozen peas):\n• Best for acute inflammation — joints that feel hot or swollen\n• Numbs pain signals and reduces swelling\n• Use after activity or during a flare\n\nSimple rule: if the joint feels hot → cold. If it feels stiff and achy → heat.",
+  },
+  {
+    keywords:["protect","protecting","joint protection","daily","task","tasks","carry","lift"],
+    q:"How do I protect my joints during daily tasks?",
+    a:"Joint protection reduces daily wear and long-term damage:\n\n• Use the largest/strongest joint — carry bags on your forearm, not in your fingers\n• Spread the load — two hands on a pot, not one\n• Avoid tight pinching — use built-up handles, loop scissors, jar openers\n• Keep joints in neutral positions — avoid extreme bending or twisting\n• Rest before you're exhausted, not after\n• Slide objects instead of lifting when possible\n• Adaptive equipment is smart — not a sign of weakness",
+  },
+  {
+    keywords:["weather","rain","storm","cold","humid","pressure","barometric"],
+    q:"Does weather affect RA pain?",
+    a:"Yes — many people with RA notice more pain before low-pressure weather systems (storms). The likely reason: lower barometric pressure allows inflamed joint tissues to expand slightly, increasing pressure on nerves.\n\nWhat helps:\n• Dress in warm layers — cold and damp are common triggers\n• Use the app to log pain alongside weather to find your personal patterns\n• Keep joints warm with compression and layers on cold days\n• Plan lighter activity days when storms are forecast\n\nYou're not imagining it — the weather-pain connection is real and documented.",
+  },
+  {
+    keywords:["stress","anxiety","mental","mood","emotion","emotional"],
+    q:"How does stress affect RA?",
+    a:"Stress directly worsens RA — it triggers release of cortisol and inflammatory cytokines that amplify joint inflammation. This isn't psychological, it's a real physiological response.\n\nManaging stress is part of managing RA:\n• Deep breathing and mindfulness — even 5 minutes lowers cortisol\n• Gentle movement (walking, yoga, tai chi) — natural stress relievers\n• Protecting your schedule — saying no to overcommitment is joint protection\n• Prioritize sleep — poor sleep amplifies both stress and pain\n• A therapist experienced with chronic illness can be genuinely helpful",
+  },
+  {
+    keywords:["exo","suit","assist","hip","support","walk","walking","gait"],
+    q:"How does the exoskeleton help with RA?",
+    a:"The exoskeleton is designed for the long days when RA affects your walking, hip stability, or energy:\n\n• Hip-level assist means your muscles do less work on every step — less fatigue by end of day\n• Auto-assist scales power to your logged pain level automatically\n• On high-pain days, 70–90% power lets you conserve energy for what matters most\n• Waist straps provide lumbar support — helpful if hip or back pain affects your gait\n• Walking mode keeps assist smooth and natural for daily activities",
+  },
+];
+
+const CHIPS = [
+  "Why are my joints stiff in the morning?",
+  "Gentle moves for sore hands?",
+  "How should I set the suit during a flare?",
+  "Tips for pacing a busy day",
+  "What foods help with RA inflammation?",
+  "How do I manage a flare at home?",
+  "Heat or cold — which should I use?",
+  "Tips for sleeping with joint pain?",
+];
+
+function findAnswer(text) {
+  const t = text.toLowerCase();
+  for (const qa of QA_PAIRS) {
+    if (qa.keywords.some(kw => t.includes(kw))) return qa.a;
+  }
+  return "That's a great question for your rheumatologist or physical therapist — they know your full history best.\n\nTry one of the suggested questions below, or check the Therapy and Workouts tabs for practical day-to-day guidance.";
+}
 
 const JOINTS = [
   {id:"neck", label:"Neck",          x:100,y:60, region:"upper"},
@@ -767,9 +855,6 @@ export default function App() {
   const [newEvent, setNewEvent]   = useState({ title:"", time:"", intensity:"medium" });
   const [expandedWorkout, setExpandedWorkout] = useState(null);
   const [careView, setCareView]   = useState("exercises");
-  const [apiKey, setApiKey]       = useState(() => load("ra:apiKey", ""));
-  const [apiKeyInput, setApiKeyInput] = useState("");
-  const [showKeySetup, setShowKeySetup] = useState(false);
   const [messages, setMessages]   = useState([{
     role:"bot",
     text:"Hi — I'm your RA companion. Ask me anything about flares, gentle movement, joint care, or how to use the suit. I'm here to help, though I'm not a substitute for your rheumatologist.",
@@ -835,45 +920,12 @@ export default function App() {
     setSchedule(next); save("ra:schedule",next);
   }
 
-  function saveApiKey() {
-    const k = apiKeyInput.trim();
-    if (!k.startsWith("sk-ant-")) {
-      alert("That doesn't look like an Anthropic API key — it should start with sk-ant-");
-      return;
-    }
-    setApiKey(k); save("ra:apiKey", k);
-    setApiKeyInput(""); setShowKeySetup(false);
-  }
-
   async function send(preset) {
     const text = (preset??input).trim(); if (!text||thinking) return;
-    if (!apiKey) { setShowKeySetup(true); return; }
-    const userMsg = {role:"user",text};
-    const history = [...messages,userMsg];
-    setMessages(history); setInput(""); setThinking(true);
-
-    const jointNames = Object.entries(locations)
-      .map(([id,lvl]) => `${JOINTS.find(j=>j.id===id)?.label} (${lvl}/5)`)
-      .join(", ") || "none";
-    const system =
-      `${BASE_SYSTEM}\n\n` +
-      `Current context — Pain today: ${currentLevel||"not logged"}/5. ` +
-      `Flagged joints: ${jointNames}. ` +
-      `Suit: ${power}% assist, ${mode} mode, ${active?"active":"paused"}.`;
-
-    try {
-      const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
-      const res = await client.messages.create({
-        model:"claude-haiku-4-5-20251001", max_tokens:700, system,
-        messages: history.map(m=>({role:m.role==="bot"?"assistant":"user",content:m.text})),
-      });
-      setMessages(m=>[...m,{role:"bot",text:res.content[0].text}]);
-    } catch(err) {
-      const msg = err?.status===401
-        ? "Invalid API key — tap the key icon to update it."
-        : "Couldn't reach EaseRA just now. Check your connection.";
-      setMessages(m=>[...m,{role:"bot",text:msg}]);
-    } finally { setThinking(false); }
+    setMessages(m=>[...m,{role:"user",text}]); setInput(""); setThinking(true);
+    await new Promise(r=>setTimeout(r,420));
+    setMessages(m=>[...m,{role:"bot",text:findAnswer(text)}]);
+    setThinking(false);
   }
 
   const greeting = () => { const h=new Date().getHours(); return h<12?"Good morning":h<18?"Good afternoon":"Good evening"; };
@@ -1237,71 +1289,28 @@ export default function App() {
             <div style={{width:42,height:42,borderRadius:14,background:"var(--teal-soft)",color:"var(--teal-deep)",display:"flex",alignItems:"center",justifyContent:"center"}}>
               <Bot size={22}/>
             </div>
-            <div style={{flex:1}}>
+            <div>
               <div style={{fontWeight:700,fontSize:17}}>EaseRA Assistant</div>
               <div style={{fontSize:12,color:"var(--muted)"}}>Informational support · not a doctor</div>
             </div>
-            <button onClick={()=>setShowKeySetup(s=>!s)}
-              style={{width:36,height:36,borderRadius:12,border:"1px solid var(--line)",background:apiKey?"var(--teal-soft)":"var(--coral-soft)",
-                color:apiKey?"var(--teal-deep)":"var(--coral)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
-              <Key size={16}/>
-            </button>
           </header>
-
-          {/* API key setup panel */}
-          {(showKeySetup || !apiKey) && (
-            <div className="key-setup">
-              <h3>{apiKey ? "Update API key" : "Set up AI chat"}</h3>
-              <p>
-                {apiKey
-                  ? "Enter a new Anthropic API key to replace the current one."
-                  : "EaseRA chat needs an Anthropic API key. Your key is stored only on this device and never shared."}
-              </p>
-              {!apiKey && (
-                <p style={{marginBottom:14}}>
-                  Get a free key at <strong>console.anthropic.com</strong> → API keys → Create key.
-                </p>
-              )}
-              <input className="key-input" type="password" placeholder="sk-ant-api03-…"
-                value={apiKeyInput} onChange={e=>setApiKeyInput(e.target.value)}
-                onKeyDown={e=>e.key==="Enter"&&saveApiKey()}/>
-              <div style={{display:"flex",gap:8}}>
-                <button className="btn btn-primary btn-sm" style={{flex:1}} onClick={saveApiKey}>Save key</button>
-                {apiKey && (
-                  <>
-                    <button className="btn btn-ghost btn-sm" style={{flex:1}} onClick={()=>{setShowKeySetup(false);setApiKeyInput("");}}>Cancel</button>
-                    <button className="btn btn-sm" style={{flex:1,background:"var(--coral-soft)",color:"var(--coral)",border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}
-                      onClick={()=>{setApiKey("");save("ra:apiKey","");setShowKeySetup(false);}}>Remove</button>
-                  </>
-                )}
-              </div>
-              <p className="key-note">Your key is saved in your browser only — it never leaves your device.</p>
+          <div className="chat-scroll">
+            {messages.map((m,i)=><div key={i} className={"msg "+m.role}>{m.text}</div>)}
+            {thinking && <div className="msg bot"><div className="typing"><i/><i/><i/></div></div>}
+            <div ref={chatEnd}/>
+          </div>
+          <div className="chips">
+            {CHIPS.slice(0, messages.length <= 1 ? 8 : 4).map(q=>(
+              <button key={q} className="chip" onClick={()=>send(q)}>{q}</button>
+            ))}
+          </div>
+          <div className="composer">
+            <div className="row">
+              <input value={input} placeholder="Ask about RA, flares, the suit…"
+                onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()}/>
+              <button className="sendb" disabled={!input.trim()||thinking} onClick={()=>send()}><Send size={18}/></button>
             </div>
-          )}
-
-          {apiKey && !showKeySetup && (
-            <>
-              <div className="chat-scroll">
-                {messages.map((m,i)=><div key={i} className={"msg "+m.role}>{m.text}</div>)}
-                {thinking && <div className="msg bot"><div className="typing"><i/><i/><i/></div></div>}
-                <div ref={chatEnd}/>
-              </div>
-              {messages.length<=1 && (
-                <div className="chips">
-                  {["Why are my joints stiff in the morning?","Gentle moves for sore hands?","How should I set the suit during a flare?","Tips for pacing a busy day"].map(q=>(
-                    <button key={q} className="chip" onClick={()=>send(q)}>{q}</button>
-                  ))}
-                </div>
-              )}
-              <div className="composer">
-                <div className="row">
-                  <input value={input} placeholder="Ask about RA, flares, the suit…"
-                    onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()}/>
-                  <button className="sendb" disabled={!input.trim()||thinking} onClick={()=>send()}><Send size={18}/></button>
-                </div>
-              </div>
-            </>
-          )}
+          </div>
         </main>
       )}
 
