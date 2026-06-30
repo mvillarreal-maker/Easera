@@ -5,6 +5,6 @@ export default defineConfig({
   plugins: [react()],
   base: '/Easera/',
   optimizeDeps: {
-    include: ['three', '@react-three/fiber', '@react-three/drei'],
+    include: ['three', '@react-three/fiber', '@react-three/drei', '@anthropic-ai/sdk'],
   },
 })

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import Anthropic from "@anthropic-ai/sdk";
 import * as THREE from "three";
 import {
   LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid,
@@ -7,7 +8,7 @@ import {
   Activity, Home, MapPin, Sparkles, MessageCircle, Cog, Send,
   Waves, Wind, Footprints, HandHeart, Snowflake, Flame, Bike, Dumbbell,
   Check, Bot, Calendar, Plus, X, AlertTriangle, Clock, ChevronDown,
-  ChevronUp, BarChart2,
+  ChevronUp, BarChart2, Key,
 } from "lucide-react";
 
 const STYLES = `
@@ -196,12 +197,27 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .nav .pip{width:28px;height:3px;border-radius:4px;background:transparent;margin-bottom:1px;transition:.2s;}
 .nav button.on .pip{background:var(--teal);}
 .disclaimer{font-size:12px;color:var(--muted);text-align:center;line-height:1.5;padding:8px 14px 0;}
+
+/* Care-tab segment */
+.care-seg{display:flex;gap:6px;background:var(--surface-2);padding:5px;border-radius:14px;margin-bottom:16px;}
+.care-seg button{flex:1;border:none;background:transparent;padding:10px;border-radius:10px;font-family:inherit;font-weight:700;font-size:13px;color:var(--muted);cursor:pointer;transition:.18s;}
+.care-seg button.on{background:var(--surface);color:var(--teal-deep);box-shadow:0 2px 8px rgba(0,0,0,.08);}
+
+/* API key setup */
+.key-setup{background:var(--teal-soft);border:1.5px solid var(--teal);border-radius:22px;padding:24px;margin-bottom:16px;}
+.key-setup h3{font-family:'Fraunces',serif;font-size:21px;font-weight:500;color:var(--teal-deep);margin-bottom:8px;}
+.key-setup p{font-size:13px;color:var(--muted);line-height:1.55;margin-bottom:14px;}
+.key-input{width:100%;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;font-family:monospace;font-size:13px;color:var(--ink);background:var(--surface);outline:none;margin-bottom:12px;}
+.key-input:focus{border-color:var(--teal);}
+.key-note{font-size:11px;color:var(--faint);text-align:center;margin-top:6px;line-height:1.5;}
 `;
 
 /* ── constants ── */
 const PAIN_COLORS = ["#5FB87A","#9CC25C","#F0B23B","#F08A45","#E0594B"];
 const FEELINGS    = ["Pick how today feels","A good day","Manageable","A bit much","Rough","Really tough"];
 const jColor      = lvl => PAIN_COLORS[lvl - 1] || "#ccc";
+
+const BASE_SYSTEM = `You are EaseRA, a warm, calm companion for people living with Rheumatoid Arthritis (RA). You offer evidence-based, compassionate guidance about managing RA — joint care, medication side effects, pacing, flare management, emotional wellbeing, exoskeleton use, and gentle exercise. Always encourage the user to consult their rheumatologist or physical therapist for medical decisions. Keep responses concise, warm, and practical — no long lists unless helpful. Never dismiss pain or fatigue.`;
 
 const JOINTS = [
   {id:"neck", label:"Neck",          x:100,y:60, region:"upper"},
@@ -525,6 +541,169 @@ function buildWorkouts(painLevel, locations) {
 }
 
 /* ══════════════════════════════════════════
+   THERAPY RECOMMENDATIONS
+   — specific therapeutic modalities per joint
+   ══════════════════════════════════════════ */
+function buildTherapies(painLevel, locations) {
+  const therapies = [];
+  const levelFor  = id => locations[id] || 0;
+  const hasJoint  = (...ids) => ids.some(id => locations[id]);
+  const highPain  = painLevel >= 4;
+
+  /* morning stiffness — almost always useful for RA */
+  if (painLevel >= 2) {
+    therapies.push({
+      title:"Morning Warmth Protocol",
+      why:"RA stiffness peaks in the morning. Warmth before movement makes a big difference.",
+      tag:"Daily", icon:Flame, c:"#F08A45", duration:"10–15 min",
+      exercises:[
+        {name:"Warm shower first", detail:"Take a warm shower before doing anything else — loosens stiff joints fast"},
+        {name:"Heated blanket rest", detail:"5 min under a warm blanket; gently flex hands and feet while resting"},
+        {name:"Warm mug hold", detail:"Holding a warm mug gently warms and lightly exercises hand joints at the same time"},
+      ],
+    });
+  }
+
+  /* paraffin wax bath — hands/wrists */
+  if (hasJoint("haL","haR","wrL","wrR","elL","elR")) {
+    const lvl = Math.max(levelFor("haL"),levelFor("haR"),levelFor("wrL"),levelFor("wrR"),levelFor("elL"),levelFor("elR"));
+    therapies.push({
+      title:"Paraffin Wax Bath",
+      why:`One of the most effective RA hand therapies — deep warmth for hand/wrist pain (${lvl}/5) that penetrates right into the joint.`,
+      tag:"Heat therapy", icon:Flame, c:"#F0B23B", duration:"20 min",
+      exercises:[
+        {name:"Prep hands", detail:"Wash and dry hands. Remove all rings and jewelry first."},
+        {name:"Dip 6–8 times", detail:"Dip into melted paraffin (48–52°C / 118–125°F). Let each layer set before dipping again."},
+        {name:"Wrap in towel", detail:"Cover hand in plastic bag then wrap in a towel. Rest 15–20 minutes."},
+        {name:"Peel off and move", detail:"Remove wax then do gentle hand exercises immediately while joints are warm."},
+      ],
+    });
+  }
+
+  /* contrast baths — hands or ankles, not during high flare */
+  if (hasJoint("haL","haR","wrL","wrR","anL","anR","ftL","ftR") && !highPain) {
+    therapies.push({
+      title:"Contrast Bath Therapy",
+      why:"Alternating warm and cool water reduces inflammation and boosts circulation in hands, wrists, ankles, and feet.",
+      tag:"Circulation", icon:Waves, c:"#3a8fb0", duration:"20 min",
+      exercises:[
+        {name:"Fill two basins", detail:"Warm basin: 38–40°C (100–104°F). Cool basin: 18–21°C (65–70°F)."},
+        {name:"Warm for 4 min", detail:"Submerge hands or feet in warm water for 4 minutes."},
+        {name:"Cool for 1 min", detail:"Switch to cool water for 1 minute."},
+        {name:"Repeat 4–5 cycles", detail:"Alternate 4 times, always ending in warm water."},
+      ],
+    });
+  }
+
+  /* cold therapy — acute flare */
+  if (highPain) {
+    therapies.push({
+      title:"Cold Therapy — Acute Flare",
+      why:`Pain is ${painLevel}/5 today. Cold reduces acute swelling and numbs pain signals during a flare.`,
+      tag:"Cold", icon:Snowflake, c:"#3a8fb0", duration:"10–15 min",
+      exercises:[
+        {name:"Ice pack or frozen peas", detail:"Always wrap in a thin cloth — never apply ice directly to skin."},
+        {name:"Apply max 15 min", detail:"Apply to the most inflamed joint. Remove immediately if skin goes numb."},
+        {name:"20-min rest between", detail:"Wait at least 20 minutes before reapplying to the same spot."},
+        {name:"Elevate if possible", detail:"Rest the swollen joint elevated above heart level while using cold."},
+      ],
+    });
+  }
+
+  /* moist heat — chronic stiffness (not acute flare) */
+  if (!highPain && Object.keys(locations).length > 0) {
+    therapies.push({
+      title:"Moist Heat Therapy",
+      why:"Moist heat penetrates deeper than dry heat and is most effective for RA morning stiffness and muscle tightness.",
+      tag:"Heat", icon:Flame, c:"#E0594B", duration:"15–20 min",
+      exercises:[
+        {name:"Moist heat pack", detail:"Use a microwavable moist heat pack or warm damp towel over stiff joints."},
+        {name:"Cloth barrier always", detail:"Never place hot pack directly on skin — use a folded towel between pack and body."},
+        {name:"Move right after", detail:"Do gentle range-of-motion exercises immediately after — joints are most pliable while warm."},
+        ...(hasJoint("shL","shR") ? [{name:"For shoulders", detail:"Warm damp towel draped over the shoulder for 15 min while seated and supported."}] : []),
+      ],
+    });
+  }
+
+  /* epsom salt soak — feet/ankles */
+  if (hasJoint("anL","anR","ftL","ftR")) {
+    therapies.push({
+      title:"Epsom Salt Foot Soak",
+      why:"Magnesium sulfate reduces foot and ankle inflammation and eases soreness after being on your feet.",
+      tag:"Soak", icon:Waves, c:"#6FB89A", duration:"20 min",
+      exercises:[
+        {name:"Warm basin", detail:"Fill a basin with warm (not hot) water — about 38°C (100°F)."},
+        {name:"Add 1 cup Epsom salts", detail:"Stir until dissolved. Optional: 5 drops lavender essential oil."},
+        {name:"Soak 20 min", detail:"Rest with feet in basin. Gently flex and circle ankles while soaking."},
+        {name:"Pat dry and moisturize", detail:"Pat (don't rub) dry, then apply a rich moisturizer — skin can crack after soaking."},
+      ],
+    });
+  }
+
+  /* compression — swollen joints */
+  if (Object.keys(locations).length > 0 && painLevel >= 2) {
+    const steps = [];
+    if (hasJoint("haL","haR","wrL","wrR")) steps.push({name:"Compression gloves", detail:"Arthritis compression gloves in the morning reduce stiffness and swelling. Fingerless style keeps grip free."});
+    if (hasJoint("knL","knR")) steps.push({name:"Knee sleeve", detail:"A snug neoprene knee sleeve adds warmth + gentle compression. Avoid if circulation is already poor."});
+    if (hasJoint("anL","anR","ftL","ftR")) steps.push({name:"Compression socks", detail:"15–20 mmHg graduated compression socks reduce ankle and foot swelling throughout the day."});
+    steps.push({name:"Don't over-tighten", detail:"Compression should feel snug but never cut off circulation. Fingers and toes should stay warm and pink."});
+    therapies.push({
+      title:"Compression Therapy",
+      why:"Compression reduces swelling and gives joints extra proprioceptive support, which eases pain during movement.",
+      tag:"Support", icon:Wind, c:"#8a7bd8", duration:"Wear during activities",
+      exercises:steps,
+    });
+  }
+
+  /* TENS — moderate/high pain */
+  if (painLevel >= 3 && Object.keys(locations).length > 0) {
+    therapies.push({
+      title:"TENS Therapy",
+      why:"Transcutaneous electrical nerve stimulation interrupts pain signals and can significantly reduce RA joint pain.",
+      tag:"Device", icon:Activity, c:"#5E747C", duration:"20–30 min",
+      exercises:[
+        {name:"Place pads near (not on) joints", detail:"Position pads on the muscle around the joint, not directly on a swollen or inflamed area."},
+        {name:"Start at lowest setting", detail:"Increase slowly to a comfortable buzzing/tingling sensation — never to the point of pain."},
+        {name:"Use 1–3 times per day", detail:"Sessions of 20–30 min. Most effective during flare periods."},
+        {name:"Avoid on acutely red joints", detail:"If a joint is hot, red, and swollen, check with your PT before applying TENS to that area."},
+      ],
+    });
+  }
+
+  /* night splinting — wrists/hands */
+  if (hasJoint("wrL","wrR","haL","haR") && painLevel >= 2) {
+    therapies.push({
+      title:"Night Splinting",
+      why:"Resting splints worn during sleep keep wrists in neutral position, reducing morning stiffness and preventing deformity over time.",
+      tag:"Protective", icon:HandHeart, c:"#9CC25C", duration:"While sleeping",
+      exercises:[
+        {name:"Get a proper fit", detail:"Your OT can fit resting splints perfectly — off-the-shelf work too but check the wrist angle."},
+        {name:"Neutral wrist position", detail:"Splint holds wrist at 0–10° of extension — straight, not bent up or down."},
+        {name:"Wear every night", detail:"Consistent nightly use produces the most benefit for morning stiffness."},
+        {name:"Morning mobility first", detail:"After removing the splint, do gentle wrist circles and finger spreads before any tasks."},
+      ],
+    });
+  }
+
+  /* rest and pacing — high pain */
+  if (highPain) {
+    therapies.push({
+      title:"Rest & Pacing Strategy",
+      why:"On a high-pain day, pacing is the most important therapy. Overdoing it extends the flare.",
+      tag:"Comfort", icon:Wind, c:"#5E747C", duration:"Throughout the day",
+      exercises:[
+        {name:"10-min activity / 10-min rest", detail:"Break tasks into 10-minute chunks, then rest. Shorter bursts with recovery prevent exhaustion."},
+        {name:"Prioritize the top 3 tasks", detail:"Choose the 3 most important things today. Let the rest go without guilt."},
+        {name:"Supported positions", detail:"Use pillows to support joints when sitting or lying. Keep wrists and elbows slightly elevated."},
+        {name:"Heat first, cold after", detail:"Warm shower in the morning for stiffness. If joints feel hot/swollen later, switch to cold."},
+      ],
+    });
+  }
+
+  return therapies.slice(0, 6);
+}
+
+/* ══════════════════════════════════════════
    SCHEDULE SUGGESTION ENGINE
    ══════════════════════════════════════════ */
 function getSuggestions(painLevel, locations, events) {
@@ -587,6 +766,10 @@ export default function App() {
   const [showAdd, setShowAdd]     = useState(false);
   const [newEvent, setNewEvent]   = useState({ title:"", time:"", intensity:"medium" });
   const [expandedWorkout, setExpandedWorkout] = useState(null);
+  const [careView, setCareView]   = useState("exercises");
+  const [apiKey, setApiKey]       = useState(() => load("ra:apiKey", ""));
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [showKeySetup, setShowKeySetup] = useState(false);
   const [messages, setMessages]   = useState([{
     role:"bot",
     text:"Hi — I'm your RA companion. Ask me anything about flares, gentle movement, joint care, or how to use the suit. I'm here to help, though I'm not a substitute for your rheumatologist.",
@@ -652,8 +835,19 @@ export default function App() {
     setSchedule(next); save("ra:schedule",next);
   }
 
+  function saveApiKey() {
+    const k = apiKeyInput.trim();
+    if (!k.startsWith("sk-ant-")) {
+      alert("That doesn't look like an Anthropic API key — it should start with sk-ant-");
+      return;
+    }
+    setApiKey(k); save("ra:apiKey", k);
+    setApiKeyInput(""); setShowKeySetup(false);
+  }
+
   async function send(preset) {
     const text = (preset??input).trim(); if (!text||thinking) return;
+    if (!apiKey) { setShowKeySetup(true); return; }
     const userMsg = {role:"user",text};
     const history = [...messages,userMsg];
     setMessages(history); setInput(""); setThinking(true);
@@ -661,26 +855,31 @@ export default function App() {
     const jointNames = Object.entries(locations)
       .map(([id,lvl]) => `${JOINTS.find(j=>j.id===id)?.label} (${lvl}/5)`)
       .join(", ") || "none";
-    const systemContext =
-      `User pain today: ${currentLevel||"not logged"}/5. ` +
+    const system =
+      `${BASE_SYSTEM}\n\n` +
+      `Current context — Pain today: ${currentLevel||"not logged"}/5. ` +
       `Flagged joints: ${jointNames}. ` +
       `Suit: ${power}% assist, ${mode} mode, ${active?"active":"paused"}.`;
 
     try {
-      const res = await fetch("/api/chat",{
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({ systemContext, messages:history.map(m=>({role:m.role==="bot"?"assistant":"user",content:m.text})) }),
+      const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+      const res = await client.messages.create({
+        model:"claude-haiku-4-5-20251001", max_tokens:700, system,
+        messages: history.map(m=>({role:m.role==="bot"?"assistant":"user",content:m.text})),
       });
-      const data = await res.json();
-      setMessages(m=>[...m,{role:"bot",text:data.content||data.error||"Try again in a moment."}]);
-    } catch {
-      setMessages(m=>[...m,{role:"bot",text:"Couldn't reach my brain just now. Check your connection."}]);
+      setMessages(m=>[...m,{role:"bot",text:res.content[0].text}]);
+    } catch(err) {
+      const msg = err?.status===401
+        ? "Invalid API key — tap the key icon to update it."
+        : "Couldn't reach EaseRA just now. Check your connection.";
+      setMessages(m=>[...m,{role:"bot",text:msg}]);
     } finally { setThinking(false); }
   }
 
   const greeting = () => { const h=new Date().getHours(); return h<12?"Good morning":h<18?"Good afternoon":"Good evening"; };
   const chartData = logs.slice(-14).map(l=>({day:new Date(l.d).toLocaleDateString(undefined,{weekday:"short"}),level:l.level}));
   const workouts  = buildWorkouts(currentLevel||1, locations);
+  const therapies = buildTherapies(currentLevel||1, locations);
 
   const pendingSuggestions = suggestions.filter(s => {
     const ev = schedule.find(e=>e.id===s.eventId);
@@ -831,16 +1030,22 @@ export default function App() {
         </main>
       )}
 
-      {/* ───── WORKOUTS ───── */}
+      {/* ───── WORKOUTS / THERAPY ───── */}
       {tab==="workout" && (
         <main className="screen">
-          <div className="sec-title">Today's workouts</div>
-          <p style={{color:"var(--muted)",fontSize:14,margin:"0 2px 14px",lineHeight:1.5}}>
+          <div className="sec-title">Care for today</div>
+          <p style={{color:"var(--muted)",fontSize:14,margin:"0 2px 12px",lineHeight:1.5}}>
             {currentLevel
-              ? `Tailored for pain level ${currentLevel}/5${Object.keys(locations).length>0?` and ${Object.keys(locations).length} flagged joint${Object.keys(locations).length>1?"s":""}`:""}. Tap any card to expand exercises.`
+              ? `Tailored for pain level ${currentLevel}/5${Object.keys(locations).length>0?` · ${Object.keys(locations).length} flagged joint${Object.keys(locations).length>1?"s":""}`:""}.`
               : "Log today's pain for a personalised plan."}
           </p>
-          {workouts.map((w,i)=>{
+
+          <div className="care-seg">
+            <button className={careView==="exercises"?"on":""} onClick={()=>setCareView("exercises")}>Exercises</button>
+            <button className={careView==="therapy"?"on":""} onClick={()=>setCareView("therapy")}>Therapy</button>
+          </div>
+
+          {(careView==="exercises" ? workouts : therapies).map((w,i)=>{
             const Icon=w.icon; const open=expandedWorkout===i;
             return (
               <div className="workout" key={i}>
@@ -872,7 +1077,7 @@ export default function App() {
               </div>
             );
           })}
-          <p className="disclaimer">These are general suggestions — not medical advice. Always check with your PT or rheumatologist before starting a new routine, especially during a flare.</p>
+          <p className="disclaimer">General suggestions — not medical advice. Always check with your PT or rheumatologist before starting a new routine, especially during a flare.</p>
         </main>
       )}
 
@@ -1032,30 +1237,71 @@ export default function App() {
             <div style={{width:42,height:42,borderRadius:14,background:"var(--teal-soft)",color:"var(--teal-deep)",display:"flex",alignItems:"center",justifyContent:"center"}}>
               <Bot size={22}/>
             </div>
-            <div>
+            <div style={{flex:1}}>
               <div style={{fontWeight:700,fontSize:17}}>EaseRA Assistant</div>
               <div style={{fontSize:12,color:"var(--muted)"}}>Informational support · not a doctor</div>
             </div>
+            <button onClick={()=>setShowKeySetup(s=>!s)}
+              style={{width:36,height:36,borderRadius:12,border:"1px solid var(--line)",background:apiKey?"var(--teal-soft)":"var(--coral-soft)",
+                color:apiKey?"var(--teal-deep)":"var(--coral)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+              <Key size={16}/>
+            </button>
           </header>
-          <div className="chat-scroll">
-            {messages.map((m,i)=><div key={i} className={"msg "+m.role}>{m.text}</div>)}
-            {thinking && <div className="msg bot"><div className="typing"><i/><i/><i/></div></div>}
-            <div ref={chatEnd}/>
-          </div>
-          {messages.length<=1 && (
-            <div className="chips">
-              {["Why are my joints stiff in the morning?","Gentle moves for sore hands?","How should I set the suit during a flare?","Tips for pacing a busy day"].map(q=>(
-                <button key={q} className="chip" onClick={()=>send(q)}>{q}</button>
-              ))}
+
+          {/* API key setup panel */}
+          {(showKeySetup || !apiKey) && (
+            <div className="key-setup">
+              <h3>{apiKey ? "Update API key" : "Set up AI chat"}</h3>
+              <p>
+                {apiKey
+                  ? "Enter a new Anthropic API key to replace the current one."
+                  : "EaseRA chat needs an Anthropic API key. Your key is stored only on this device and never shared."}
+              </p>
+              {!apiKey && (
+                <p style={{marginBottom:14}}>
+                  Get a free key at <strong>console.anthropic.com</strong> → API keys → Create key.
+                </p>
+              )}
+              <input className="key-input" type="password" placeholder="sk-ant-api03-…"
+                value={apiKeyInput} onChange={e=>setApiKeyInput(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&saveApiKey()}/>
+              <div style={{display:"flex",gap:8}}>
+                <button className="btn btn-primary btn-sm" style={{flex:1}} onClick={saveApiKey}>Save key</button>
+                {apiKey && (
+                  <>
+                    <button className="btn btn-ghost btn-sm" style={{flex:1}} onClick={()=>{setShowKeySetup(false);setApiKeyInput("");}}>Cancel</button>
+                    <button className="btn btn-sm" style={{flex:1,background:"var(--coral-soft)",color:"var(--coral)",border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}
+                      onClick={()=>{setApiKey("");save("ra:apiKey","");setShowKeySetup(false);}}>Remove</button>
+                  </>
+                )}
+              </div>
+              <p className="key-note">Your key is saved in your browser only — it never leaves your device.</p>
             </div>
           )}
-          <div className="composer">
-            <div className="row">
-              <input value={input} placeholder="Ask about RA, flares, the suit…"
-                onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()}/>
-              <button className="sendb" disabled={!input.trim()||thinking} onClick={()=>send()}><Send size={18}/></button>
-            </div>
-          </div>
+
+          {apiKey && !showKeySetup && (
+            <>
+              <div className="chat-scroll">
+                {messages.map((m,i)=><div key={i} className={"msg "+m.role}>{m.text}</div>)}
+                {thinking && <div className="msg bot"><div className="typing"><i/><i/><i/></div></div>}
+                <div ref={chatEnd}/>
+              </div>
+              {messages.length<=1 && (
+                <div className="chips">
+                  {["Why are my joints stiff in the morning?","Gentle moves for sore hands?","How should I set the suit during a flare?","Tips for pacing a busy day"].map(q=>(
+                    <button key={q} className="chip" onClick={()=>send(q)}>{q}</button>
+                  ))}
+                </div>
+              )}
+              <div className="composer">
+                <div className="row">
+                  <input value={input} placeholder="Ask about RA, flares, the suit…"
+                    onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()}/>
+                  <button className="sendb" disabled={!input.trim()||thinking} onClick={()=>send()}><Send size={18}/></button>
+                </div>
+              </div>
+            </>
+          )}
         </main>
       )}
 
